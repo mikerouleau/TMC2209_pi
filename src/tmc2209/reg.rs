@@ -1,111 +1,260 @@
-pub struct TMC2209Reg;
+use packed_struct::prelude::*;
 
-// https://www.trinamic.com/fileadmin/assets/Products/ICs_Documents/TMC2209_Datasheet_V103.pdf
 #[allow(dead_code)]
-impl TMC2209Reg {
-    const WRITE_OFFSET: u32 = 0x80;
+pub const WRITE_OFFSET: u8 = 0x80;
 
-    // Registers
-    pub const GCONF: u32 = 0x00;
-    const GSTAT: u32 = 0x01;
-    const IFCNT: u32 = 0x02;
-    const IOIN: u32 = 0x06;
-    const IHOLD_IRUN: u32 = 0x10;
-    const TSTEP: u32 = 0x12;
-    const VACTUAL: u32 = 0x22;
-    const TCOOLTHRS: u32 = 0x14;
-    const SGTHRS: u32 = 0x40;
-    const SG_RESULT: u32 = 0x41;
-    const COOLCONF: u32 = 0x42;
-    const MSCNT: u32 = 0x6A;
-    const MSCURACT: u32 = 0x6B;
-    const CHOPCONF: u32 = 0x6C;
-    const DRVSTATUS: u32 = 0x6F;
-    const PWMCONF: u32 = 0x70;
-    const PWM_SCALE: u32 = 0x71;
-    const PWM_AUTO: u32 = 0x72;
+#[derive(PackedStruct)]
+#[packed_struct(size_bytes = "4", bit_numbering = "lsb0", endian = "msb")]
+pub struct GCONF {
+    #[packed_field(bits = "0")]
+    pub i_scale_analog: bool,
+    #[packed_field(bits = "1")]
+    pub internal_rsense: bool,
+    #[packed_field(bits = "2")]
+    pub en_spreadcycle: bool,
+    #[packed_field(bits = "3")]
+    pub shaft: bool,
+    #[packed_field(bits = "4")]
+    pub index_otpw: bool,
+    #[packed_field(bits = "5")]
+    pub index_step: bool,
+    #[packed_field(bits = "6")]
+    pub pdn_disable: bool,
+    #[packed_field(bits = "7")]
+    pub mstep_reg_select: bool,
+    #[packed_field(bits = "8")]
+    pub multistep_filt: bool,
+    #[packed_field(bits = "9")]
+    pub test_mode: bool,
+}
 
-    //bitmasks
-    //GCONF
-    const I_SCALE_ANALOG: u32 = 1 << 0;
-    const INTERNAL_RSENSE: u32 = 1 << 1;
-    const EN_SPREADCYCLE: u32 = 1 << 2;
-    const SHAFT: u32 = 1 << 3;
-    const INDEX_OTPW: u32 = 1 << 4;
-    const INDEX_STEP: u32 = 1 << 5;
-    const PDN_DISABLE: u32 = 1 << 6;
-    const MSTEP_REG_SELECT: u32 = 1 << 7;
-    const MULTISTEP_FILT: u32 = 1 << 8;
-    const TEST_MODE: u32 = 1 << 9;
+#[allow(dead_code)]
+impl GCONF {
+    pub const ADDR: u8 = 0x00;
+}
 
-    //GSTAT
-    const RESET: u32 = 1 << 0;
-    const DRV_ERR: u32 = 1 << 1;
-    const UV_CP: u32 = 1 << 2;
+#[derive(PackedStruct)]
+#[packed_struct(size_bytes = "4", bit_numbering = "lsb0", endian = "msb")]
+pub struct GSTAT {
+    #[packed_field(bits = "0")]
+    pub reset: bool,
+    #[packed_field(bits = "1")]
+    pub drv_err: bool,
+    #[packed_field(bits = "2")]
+    pub uv_cp: bool,
+}
 
-    //IFCNT
-    const INTERFACE_CNT: u32 = 1 << 0;
+#[allow(dead_code)]
+impl GSTAT {
+    pub const ADDR: u8 = 0x01;
+}
 
-    //NODECONF
-    // const UV_CP: u32 = 1 << 8; // mask should be 11..8
+#[derive(PackedStruct)]
+#[packed_struct(size_bytes = "4", bit_numbering = "lsb0", endian = "msb")]
+pub struct IFCNT {
+    #[packed_field(bytes = "0")]
+    pub cnt: u8,
+}
 
-    // Ignore OTP_PROG, FACTORY_CONF for now
-    // Implement later if neededs
+#[allow(dead_code)]
+impl IFCNT {
+    pub const ADDR: u8 = 0x02;
+}
 
-    // IHOLD_RUN
-    const IHOLD: u32 = 31 << 0;
-    const IRUN: u32 = 31 << 8;
-    const IHOLDDELAY: u32 = 15 << 16;
+#[derive(PackedStruct)]
+#[packed_struct(size_bytes = "4", bit_numbering = "lsb0", endian = "msb")]
+pub struct NODECONF {
+    #[packed_field(bits = "8..=11")]
+    pub send_delay: u8,
+}
 
-    // Ignore TPOWER_DOWN
-    // None required for TSTEP
-    // Ignore TPWMTHRS
-    // None required for VACTUAL
+#[allow(dead_code)]
+impl NODECONF {
+    pub const ADDR: u8 = 0x03;
+}
 
-    //COOLCONF
-    const SEMIN: u32 = 15 << 0;
-    const SEUP: u32 = 3 << 5;
-    const SEMAX: u32 = 15 << 8;
-    const SEDN: u32 = 3 << 13;
-    const SEIMIN: u32 = 1 << 15;
+// ignore OTP programming for now
 
-    // None required for MSCNT, MSCURACT
+#[derive(PackedStruct)]
+#[packed_struct(size_bytes = "4", bit_numbering = "lsb0", endian = "msb")]
+pub struct IOIN {
+    #[packed_field(bits = "0")]
+    pub enn: bool,
+    #[packed_field(bits = "1")]
+    pub zero1: Integer<u8, packed_bits::Bits<1>>,
+    #[packed_field(bits = "2")]
+    pub ms1: bool,
+    #[packed_field(bits = "3")]
+    pub ms2: bool,
+    #[packed_field(bits = "4")]
+    pub diag: bool,
+    #[packed_field(bits = "5")]
+    pub zero2: Integer<u8, packed_bits::Bits<1>>,
+    #[packed_field(bits = "6")]
+    pub pdn_uart: bool,
+    #[packed_field(bits = "7")]
+    pub step: bool,
+    #[packed_field(bits = "8")]
+    pub spread_en: bool,
+    #[packed_field(bits = "9")]
+    pub dir: bool,
+    #[packed_field(bytes = "3")]
+    pub version: u8,
+}
 
-    //CHOPCONF
-    const TOFF: u32 = 15 << 0;
-    const HSTRT: u32 = 7 << 4;
-    const HEND: u32 = 15 << 7;
-    const TBL: u32 = 3 << 15;
-    const VSENSE: u32 = 1 << 17;
-    const MRES: u32 = 15 << 24;
-    const INTPOL: u32 = 1 << 28;
-    const DEDEG: u32 = 1 << 29;
-    const DISS2G: u32 = 1 << 30;
-    const DISS2VS: u32 = 1 << 31;
+#[allow(dead_code)]
+impl IOIN {
+    pub const ADDR: u8 = 0x06;
+}
 
-    //DRV_STATUS
-    const OTPW: u32 = 1 << 0;
-    const OT: u32 = 1 << 1;
-    const S2GA: u32 = 1 << 2;
-    const S2GB: u32 = 1 << 3;
-    const S2VA: u32 = 1 << 4;
-    const S2VB: u32 = 1 << 5;
-    const OLA: u32 = 1 << 6;
-    const OLB: u32 = 1 << 7;
-    const T120: u32 = 1 << 8;
-    const T143: u32 = 1 << 9;
-    const T150: u32 = 1 << 10;
-    const T157: u32 = 1 << 11;
-    const CS_ACTUAL: u32 = 31 << 16;
-    const STEALTH: u32 = 1 << 30;
-    const STST: u32 = 1 << 31;
+// Ignore OTP_PROG, OTP_READ
+// Implement later if needed
 
-    //PWMCONF
-    const PWM_OFS: u32 = 255 << 0;
-    const PWM_GRAD: u32 = 255 << 8;
-    const PWM_FREQ: u32 = 3 << 16;
-    const PWM_AUTOSCALE: u32 = 1 << 19;
-    const FREEWHEEL: u32 = 3 << 20;
-    const PWM_REG: u32 = 15 << 24;
-    const PWM_LIM: u32 = 15 << 28;
+// Ignore FACTORY_CONF
+
+#[allow(non_camel_case_types)]
+#[derive(PackedStruct)]
+#[packed_struct(size_bytes = "4", bit_numbering = "lsb0", endian = "msb")]
+pub struct IHOLD_IRUN {
+    #[packed_field(bits = "0..=4")]
+    pub ihold: Integer<u8, packed_bits::Bits<5>>,
+    #[packed_field(bits = "8..=12")]
+    pub irun: Integer<u8, packed_bits::Bits<5>>,
+    #[packed_field(bits = "16..=19")]
+    pub ihold_delay: Integer<u8, packed_bits::Bits<4>>,
+}
+
+#[allow(dead_code)]
+impl IHOLD_IRUN {
+    pub const ADDR: u8 = 0x10;
+}
+
+#[allow(non_camel_case_types)]
+#[derive(PackedStruct)]
+#[packed_struct(size_bytes = "4", bit_numbering = "lsb0", endian = "msb")]
+pub struct TPOWER_DOWN {
+    #[packed_field(bytes = "0")]
+    pub tpower_down: Integer<u8, packed_bits::Bits<8>>,
+}
+
+#[allow(dead_code)]
+impl TPOWER_DOWN {
+    pub const ADDR: u8 = 0x11;
+}
+
+#[derive(PackedStruct)]
+#[packed_struct(size_bytes = "4", bit_numbering = "lsb0", endian = "msb")]
+pub struct TSTEP {
+    #[packed_field(bits = "0..=19")]
+    pub tstep: Integer<u32, packed_bits::Bits<20>>,
+}
+
+#[allow(dead_code)]
+impl TSTEP {
+    pub const ADDR: u8 = 0x12;
+}
+
+#[allow(non_camel_case_types)]
+#[derive(PackedStruct)]
+#[packed_struct(size_bytes = "4", bit_numbering = "lsb0", endian = "msb")]
+pub struct TPWM_THRS {
+    #[packed_field(bits = "0..=19")]
+    pub tpwm_thrs: Integer<u32, packed_bits::Bits<20>>,
+}
+
+#[allow(dead_code)]
+impl TPWM_THRS {
+    pub const ADDR: u8 = 0x13;
+}
+
+#[derive(PackedStruct)]
+#[packed_struct(size_bytes = "4", bit_numbering = "lsb0", endian = "msb")]
+pub struct VACTUAL {
+    #[packed_field(bits = "0..=23")]
+    pub tpwm_thrs: Integer<i32, packed_bits::Bits<24>>,
+}
+
+#[allow(dead_code)]
+impl VACTUAL {
+    pub const ADDR: u8 = 0x22;
+}
+
+#[allow(non_camel_case_types)]
+#[derive(PackedStruct)]
+#[packed_struct(size_bytes = "4", bit_numbering = "lsb0", endian = "msb")]
+pub struct TCOOL_THRS {
+    #[packed_field(bits = "0..=19")]
+    pub tcool_thrs: Integer<u32, packed_bits::Bits<20>>,
+}
+
+#[allow(dead_code)]
+impl TCOOL_THRS {
+    pub const ADDR: u8 = 0x14;
+}
+
+#[allow(non_camel_case_types)]
+#[derive(PackedStruct)]
+#[packed_struct(size_bytes = "4", bit_numbering = "lsb0", endian = "msb")]
+pub struct SG_THRS {
+    #[packed_field(bits = "0..=7")]
+    pub sg_thrs: Integer<u8, packed_bits::Bits<8>>,
+}
+
+#[allow(dead_code)]
+impl SG_THRS {
+    pub const ADDR: u8 = 0x40;
+}
+
+#[allow(non_camel_case_types)]
+#[derive(PackedStruct)]
+#[packed_struct(size_bytes = "4", bit_numbering = "lsb0", endian = "msb")]
+pub struct SG_RESULT {
+    #[packed_field(bits = "0..=9")] // bit 0 and 9 always 0
+    pub sg_result: Integer<u16, packed_bits::Bits<10>>,
+}
+
+#[allow(dead_code)]
+impl SG_RESULT {
+    pub const ADDR: u8 = 0x41;
+}
+
+// #[allow(non_camel_case_types)]
+// #[derive(PackedStruct)]
+// #[packed_struct(size_bytes = "4", bit_numbering = "lsb0", endian = "msb")]
+// pub struct COOL_CONF {
+//     #[packed_field(bits = "0..=9")]
+//     pub see_table: Integer<u16, packed_bits::Bits<10>>,
+// }
+
+// #[allow(dead_code)]
+// impl COOL_CONF {
+//     pub const ADDR: u8 = 0x42;
+// }
+
+#[allow(non_camel_case_types)]
+#[derive(PackedStruct)]
+#[packed_struct(size_bytes = "4", bit_numbering = "lsb0", endian = "msb")]
+pub struct MS_CNT {
+    #[packed_field(bits = "0..=9")]
+    pub ms_cnt: Integer<u16, packed_bits::Bits<10>>,
+}
+
+#[allow(dead_code)]
+impl MS_CNT {
+    pub const ADDR: u8 = 0x6A;
+}
+
+#[allow(non_camel_case_types)]
+#[derive(PackedStruct)]
+#[packed_struct(size_bytes = "4", bit_numbering = "lsb0", endian = "msb")]
+pub struct MS_CUR_ACT {
+    #[packed_field(bits = "0..=8")]
+    pub cur_b: Integer<i16, packed_bits::Bits<9>>,
+    #[packed_field(bits = "16..=24")]
+    pub cur_a: Integer<i16, packed_bits::Bits<9>>,
+}
+
+#[allow(dead_code)]
+impl MS_CUR_ACT {
+    pub const ADDR: u8 = 0x6B;
 }
