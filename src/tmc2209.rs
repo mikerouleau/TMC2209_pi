@@ -1,6 +1,6 @@
-use std::path::PathBuf;
-
 use rppal::uart::{Parity, Uart};
+use std::path::PathBuf;
+use std::time::Instant;
 
 #[allow(dead_code)]
 pub struct TMC2209 {
@@ -8,7 +8,7 @@ pub struct TMC2209 {
     pub addr: u8,
     pub baud_rate: u32,
     pub uart: Uart,
-    sync_bit: u8,
+    sync_byte: u8,
 }
 
 impl TMC2209 {
@@ -18,9 +18,52 @@ impl TMC2209 {
             addr,
             baud_rate,
             uart: Uart::with_path(path, baud_rate, Parity::None, 8, 1).unwrap(),
-            sync_bit: 0x05,
+            sync_byte: 0x05,
         }
     }
+
+    pub fn read(&mut self, reg: u8) -> Vec<u8> {
+        let crc = crc8_atm(&[self.sync_byte, self.addr, reg], 0);
+        let frame = [self.sync_byte, self.addr, reg, crc];
+
+        let mut buffer = [0u8; 1];
+        let mut received = Vec::new();
+
+        println!("send");
+        self.uart.write(&frame).expect("not written");
+
+        println!("recieve");
+        let start = Instant::now();
+        loop {
+            // Fill the buffer variable with any incoming data.
+            if self.uart.read(&mut buffer).unwrap() > 0 {
+                received.push(buffer[0]);
+                println!("Buffer byte: {}", buffer[0]);
+            }
+
+            if (received.len() == 12) || (start.elapsed().as_micros() > 8 * 20000) {
+                break;
+            }
+        }
+        return received;
+    }
+}
+
+fn crc8_atm(datagram: &[u8], initial_value: u8) -> u8 {
+    let mut crc: u8 = initial_value;
+
+    for bytey in datagram {
+        let mut byte = *bytey;
+        for _ in 0..8 {
+            if (crc >> 7) ^ (byte & 0x01) != 0 {
+                crc = ((crc << 1) ^ 0x07) & 0xFF;
+            } else {
+                crc = (crc << 1) & 0xFF;
+            }
+            byte = byte >> 1;
+        }
+    }
+    crc
 }
 pub struct TMC2209Addr;
 
