@@ -10,3 +10,4 @@ authors = ["Mike Rouleau <44850854+mikerouleau@users.noreply.github.com>"]
 rppal = "0.14.1"
 thiserror = "1.0"
 packed_struct = "0.10"
+anyhow = "1.0"
