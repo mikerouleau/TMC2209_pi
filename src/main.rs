@@ -1,5 +1,8 @@
 use rppal::uart::{Parity, Uart};
+use std::time::Instant;
 use std::{thread, time};
+
+mod tmc2209;
 
 fn main() {
     println!("Hello, world!");
@@ -13,17 +16,26 @@ fn main() {
     let frame = [sync_byte, addr, reg, crc];
 
     let mut buffer = [0u8; 1];
+    let mut received = Vec::new();
 
     println!("send");
     uart.write(&frame).expect("not written");
 
-    // thread::sleep(time::Duration::from_micros(165));
     println!("recieve");
+    let start = Instant::now();
     loop {
         // Fill the buffer variable with any incoming data.
         if uart.read(&mut buffer).unwrap() > 0 {
-            println!("Received byte: {}", buffer[0]);
+            received.push(buffer[0]);
+            println!("Buffer byte: {}", buffer[0]);
         }
+
+        if (received.len() == 12) || (start.elapsed().as_micros() > 8 * 20) {
+            break;
+        }
+    }
+    for i in received {
+        println!("Received byte: {}", i);
     }
 }
 
