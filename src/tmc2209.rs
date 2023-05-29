@@ -1,11 +1,25 @@
+use std::path::PathBuf;
+
+use rppal::uart::{Parity, Uart};
+
 #[allow(dead_code)]
 pub struct TMC2209 {
-    pub addr: TMC2209Addr,
+    pub path: PathBuf,
+    pub addr: u8,
+    pub baud_rate: u32,
+    pub uart: Uart,
+    sync_bit: u8,
 }
 
 impl TMC2209 {
-    pub fn new() -> Self {
-        TMC2209 { addr: TMC2209Addr }
+    pub fn new(path: &str, addr: u8, baud_rate: u32) -> Self {
+        TMC2209 {
+            path: path.into(),
+            addr,
+            baud_rate,
+            uart: Uart::with_path(path, baud_rate, Parity::None, 8, 1).unwrap(),
+            sync_bit: 0x05,
+        }
     }
 }
 pub struct TMC2209Addr;

@@ -1,14 +1,15 @@
-use rppal::uart::{Parity, Uart};
+// use rppal::uart::{Parity, Uart};
 use std::time::Instant;
-use std::{thread, time};
+// use std::{thread, time};
 
 mod tmc2209;
 
 fn main() {
     println!("Hello, world!");
 
-    let baud_rate = 115_200u32;
-    let mut uart = Uart::with_path("/dev/serial0", baud_rate, Parity::None, 8, 1).unwrap();
+    let mut tmc = tmc2209::TMC2209::new("/dev/serial0", 0x0, 115_200u32);
+    // let baud_rate = 115_200u32;
+    // let mut uart = Uart::with_path("/dev/serial0", baud_rate, Parity::None, 8, 1).unwrap();
     let sync_byte = 0x5;
     let addr = 0x0;
     let reg = 0x6;
@@ -19,18 +20,18 @@ fn main() {
     let mut received = Vec::new();
 
     println!("send");
-    uart.write(&frame).expect("not written");
+    tmc.uart.write(&frame).expect("not written");
 
     println!("recieve");
     let start = Instant::now();
     loop {
         // Fill the buffer variable with any incoming data.
-        if uart.read(&mut buffer).unwrap() > 0 {
+        if tmc.uart.read(&mut buffer).unwrap() > 0 {
             received.push(buffer[0]);
             println!("Buffer byte: {}", buffer[0]);
         }
 
-        if (received.len() == 12) || (start.elapsed().as_micros() > 8 * 20) {
+        if (received.len() == 12) || (start.elapsed().as_micros() > 8 * 20000) {
             break;
         }
     }
