@@ -11,7 +11,7 @@ pub struct TMC2209 {
     pub path: PathBuf,
     pub addr: u8,
     pub baud_rate: u32,
-    pub uart: Uart,
+    uart: Uart,
     sync_byte: u8,
 }
 
