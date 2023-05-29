@@ -20,10 +20,10 @@ tmc2209_pi = "0.14.1"
 This example demonstrates the movement of a stepper motor to a specific location using a combination of the UART and GPIO interfaces on the Raspberry Pi.
 
 ```rust
-use tmc2209::TMC2209;
+use tmc2209_pi::TMC2209;
 
 fn main() {
-    let mut tmc = tmc2209::TMC2209::new("/dev/serial0", 0x0, 115_200, 16, 20, 21, 26).unwrap();
+    let mut tmc = TMC2209::new("/dev/serial0", 0x0, 115_200, 16, 20, 21, 26).unwrap();
 
     tmc.go_to_position(400).unwrap();
 }
