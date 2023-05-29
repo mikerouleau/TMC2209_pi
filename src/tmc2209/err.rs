@@ -9,4 +9,6 @@ pub enum TMC2209Error {
     CRCMismatch,
     #[error("unknown TMC2209 error")]
     Unknown,
+    #[error("unexpected response")]
+    UnexpectedResponse,
 }
