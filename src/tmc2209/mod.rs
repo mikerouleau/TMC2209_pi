@@ -2,13 +2,12 @@ use anyhow::{anyhow, Result};
 use packed_struct::prelude::*;
 use rppal::gpio::{Gpio, InputPin, OutputPin};
 use rppal::uart::{Parity, Uart};
-use std::convert::TryInto;
 use std::path::PathBuf;
 use std::thread;
 use std::time::{Duration, Instant};
 
 mod err;
-pub mod reg;
+mod reg;
 use crate::tmc2209::err::TMC2209Error;
 
 pub enum Direction {
