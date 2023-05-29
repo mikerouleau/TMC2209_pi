@@ -23,7 +23,7 @@ impl TMC2209 {
     }
 
     pub fn read_reg(&mut self, reg: u8) -> Vec<u8> {
-        let crc = crc8_atm(&[self.sync_byte, self.addr, reg], 0);
+        let crc = crc8_atm(&[self.sync_byte, self.addr, reg]);
         let frame = [self.sync_byte, self.addr, reg, crc];
 
         self.uart.write(&frame).expect("Frame not written.");
@@ -40,20 +40,28 @@ impl TMC2209 {
 
             if received.len() == 12 {
                 received.drain(0..4);
+                if valid_crc_8byte(&received) {
+                    received.drain(0..3);
+                    received.pop();
+                } else {
+                    received = vec![];
+                    println!("CRC Mismatch")
+                }
                 break;
                 //arbitrarily long timeout, seems plently long in testing
             } else if start.elapsed().as_millis() > 15 {
                 received = vec![];
-                print!("Read Timeout!");
+                println!("Read Timeout!");
                 break;
             }
         }
+
         return received;
     }
 }
 
-fn crc8_atm(datagram: &[u8], initial_value: u8) -> u8 {
-    let mut crc: u8 = initial_value;
+fn crc8_atm(datagram: &[u8]) -> u8 {
+    let mut crc = 0u8;
 
     for bytey in datagram {
         let mut byte = *bytey;
@@ -68,6 +76,27 @@ fn crc8_atm(datagram: &[u8], initial_value: u8) -> u8 {
     }
     crc
 }
+
+// This is messy, but works. Needs optimization.
+fn valid_crc_8byte(datagram: &Vec<u8>) -> bool {
+    let mut local_dg = datagram.clone();
+    let expected_crc = local_dg.pop();
+    let dg: [u8; 7] = vec_to_array(local_dg);
+    if expected_crc == Some(crc8_atm(&dg)) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+use std::convert::TryInto;
+use std::vec;
+
+fn vec_to_array<T, const N: usize>(v: Vec<T>) -> [T; N] {
+    v.try_into()
+        .unwrap_or_else(|v: Vec<T>| panic!("Expected a Vec of length {} but it was {}", N, v.len()))
+}
+
 pub struct TMC2209Addr;
 
 // https://www.trinamic.com/fileadmin/assets/Products/ICs_Documents/TMC2209_Datasheet_V103.pdf
