@@ -1,34 +1,77 @@
 use anyhow::{anyhow, Result};
 use packed_struct::prelude::*;
+use rppal::gpio::{Gpio, InputPin, OutputPin};
 use rppal::uart::{Parity, Uart};
 use std::convert::TryInto;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::thread;
+use std::time::{Duration, Instant};
 
 mod err;
 pub mod reg;
 use crate::tmc2209::err::TMC2209Error;
 
+pub enum Direction {
+    CW,
+    CCW,
+}
+//Pins are BCM number!
 pub struct TMC2209 {
     pub path: PathBuf,
     pub addr: u8,
     pub baud_rate: u32,
+    pub step_pin: OutputPin,
+    pub dir_pin: OutputPin, //remove me?
+    pub en_pin: OutputPin,
+    pub diag_pin: InputPin,
+    pub position: i32,
+    direction: Direction,
     uart: Uart,
     sync_byte: u8,
 }
 
 #[allow(dead_code)]
 impl TMC2209 {
-    pub fn new(path: &str, addr: u8, baud_rate: u32) -> Self {
-        let mut uart = Uart::with_path(path, baud_rate, Parity::None, 8, 1).unwrap();
+    pub fn new(
+        path: &str,
+        addr: u8,
+        baud_rate: u32,
+        step_pin: u8,
+        dir_pin: u8,
+        en_pin: u8,
+        diag_pin: u8,
+    ) -> Result<Self, anyhow::Error> {
+        let mut uart = Uart::with_path(path, baud_rate, Parity::None, 8, 1)?;
         uart.set_write_mode(true).expect("failed to set blocking");
-        TMC2209 {
+
+        let mut tmc = TMC2209 {
             path: path.into(),
             addr,
             baud_rate,
+            step_pin: Gpio::new()?.get(step_pin)?.into_output(),
+            dir_pin: Gpio::new()?.get(dir_pin)?.into_output(),
+            en_pin: Gpio::new()?.get(en_pin)?.into_output(),
+            diag_pin: Gpio::new()?.get(diag_pin)?.into_input(),
+            position: 0,
+            direction: Direction::CCW,
             uart,
             sync_byte: 0x05,
+        };
+        tmc.init()?;
+        Ok(tmc)
+    }
+
+    fn init(&mut self) -> Result<(), anyhow::Error> {
+        let gconf = self.get_gconf()?;
+        // CW: dir pin = 0, shaft reg = 0
+        if gconf.shaft == self.dir_pin.is_set_high() {
+            self.direction = Direction::CW;
+        } else {
+            self.direction = Direction::CCW;
         }
+
+        //todo: test uart, gpio
+        return Ok(());
     }
 
     pub fn read_reg(&mut self, reg: u8) -> Result<[u8; 4]> {
@@ -94,27 +137,29 @@ impl TMC2209 {
 
     pub fn test_uart(&mut self) -> Result<()> {
         let response = self.read_reg(reg::IOIN::ADDR)?;
-        let unpacked = reg::IOIN::unpack_from_slice(&response);
+        let unpacked = reg::IOIN::unpack_from_slice(&response)?;
 
-        if unpacked.is_ok() {
-            let data = unpacked.unwrap();
-            (data.zero1 == 0.into())
-                .then_some(())
-                .ok_or(TMC2209Error::UnexpectedResponse)?;
-            (data.zero2 == 0.into())
-                .then_some(())
-                .ok_or(TMC2209Error::UnexpectedResponse)?;
-            (data.pdn_uart == true)
-                .then_some(())
-                .ok_or(TMC2209Error::UnexpectedResponse)?;
-
-            return Ok(());
-        } else {
-            return Err(anyhow!(TMC2209Error::Unknown));
+        (unpacked.zero1 == 0.into())
+            .then_some(())
+            .ok_or(TMC2209Error::UnexpectedResponse)?;
+        (unpacked.zero2 == 0.into())
+            .then_some(())
+            .ok_or(TMC2209Error::UnexpectedResponse)?;
+        if unpacked.pdn_uart != true {
+            self.set_pdn_disable(true)?;
         }
+
+        //todo read from DRV_STATUS here too
+
+        return Ok(());
     }
 
-    pub fn set_direction(&mut self, dir: bool) -> Result<(), anyhow::Error> {
+    fn get_gconf(&mut self) -> Result<reg::GCONF, anyhow::Error> {
+        let packed = self.read_reg(reg::GCONF::ADDR)?;
+        return Ok(reg::GCONF::unpack_from_slice(&packed)?);
+    }
+
+    pub fn set_shaft(&mut self, dir: bool) -> Result<(), anyhow::Error> {
         let mut packed = self.read_reg(reg::GCONF::ADDR)?;
         let mut unpacked = reg::GCONF::unpack_from_slice(&packed)?;
         unpacked.shaft = dir;
@@ -124,16 +169,111 @@ impl TMC2209 {
 
         self.write_reg(reg::GCONF::ADDR + reg::WRITE_OFFSET, packed)?;
 
-        let response = self.read_reg(reg::IFCNT::ADDR)?;
-        let after_cnt = reg::IFCNT::unpack_from_slice(&response)?.cnt;
+        let after_cnt = reg::IFCNT::unpack_from_slice(&self.read_reg(reg::IFCNT::ADDR)?)?.cnt;
 
         if prior_cnt < after_cnt {
             println!("SUCCESS");
             return Ok(());
         } else {
             println!("FAIL");
-            return Err(anyhow!(err::TMC2209Error::Unknown));
+            return Err(anyhow!(err::TMC2209Error::WriteFailed));
         }
+    }
+
+    pub fn set_pdn_disable(&mut self, disable: bool) -> Result<(), anyhow::Error> {
+        let mut packed = self.read_reg(reg::GCONF::ADDR)?;
+        let mut unpacked = reg::GCONF::unpack_from_slice(&packed)?;
+        unpacked.pdn_disable = disable;
+        packed = unpacked.pack()?;
+
+        let prior_cnt = reg::IFCNT::unpack_from_slice(&self.read_reg(reg::IFCNT::ADDR)?)?.cnt;
+
+        self.write_reg(reg::GCONF::ADDR + reg::WRITE_OFFSET, packed)?;
+
+        let after_cnt = reg::IFCNT::unpack_from_slice(&self.read_reg(reg::IFCNT::ADDR)?)?.cnt;
+
+        if prior_cnt < after_cnt {
+            return Ok(());
+        } else {
+            return Err(anyhow!(err::TMC2209Error::WriteFailed));
+        }
+    }
+
+    // pub fn set_vactual(&mut self, velocity: i32) -> Result<(), anyhow::Error> {
+    //     let mut packed = self.read_reg(reg::VACTUAL::ADDR)?;
+    //     let mut unpacked = reg::VACTUAL::unpack_from_slice(&packed)?;
+    //     unpacked.vactual = velocity.into();
+    //     packed = unpacked.pack()?;
+    //     let prior_cnt = reg::IFCNT::unpack_from_slice(&self.read_reg(reg::IFCNT::ADDR)?)?.cnt;
+    //     self.write_reg(reg::VACTUAL::ADDR + reg::WRITE_OFFSET, packed)?;
+    //     let after_cnt = reg::IFCNT::unpack_from_slice(&self.read_reg(reg::IFCNT::ADDR)?)?.cnt;
+    //     if prior_cnt < after_cnt {
+    //         println!("SUCCESS");
+    //         return Ok(());
+    //     } else {
+    //         println!("FAIL");
+    //         return Err(anyhow!(err::TMC2209Error::WriteFailed));
+    //     }
+    // }
+
+    fn set_en(&mut self, level: bool) -> Result<(), anyhow::Error> {
+        if level {
+            self.en_pin.set_high();
+        } else {
+            self.en_pin.set_low();
+        }
+        Ok(())
+    }
+
+    pub fn enable_output(&mut self, tf: bool) -> Result<(), anyhow::Error> {
+        return self.set_en(!tf);
+    }
+
+    pub fn is_output_enabled(&mut self) -> bool {
+        true
+    }
+
+    pub fn set_dir(&mut self, level: bool) -> Result<(), anyhow::Error> {
+        if level {
+            self.dir_pin.set_high();
+        } else {
+            self.dir_pin.set_low();
+        }
+        Ok(())
+    }
+
+    pub fn get_dir(&mut self) -> bool {
+        return self.dir_pin.is_set_high();
+    }
+
+    pub fn step(&mut self) {
+        self.step_pin.set_high();
+        thread::sleep(Duration::from_micros(700));
+        self.step_pin.set_low();
+        thread::sleep(Duration::from_micros(700));
+        if self.dir_pin.is_set_low() {
+            self.position += 1;
+        } else {
+            self.position -= 1;
+        }
+    }
+
+    pub fn reset_position(&mut self) {
+        self.position = 0;
+    }
+
+    pub fn go_to_position(&mut self, position: i32) -> Result<(), anyhow::Error> {
+        if position - self.position > 0 {
+            self.set_dir(false)?;
+        } else {
+            self.set_dir(true)?;
+        }
+
+        while self.position != position {
+            self.step();
+        }
+        //todo monitor stallguard for failure
+        Ok(())
     }
 }
 
