@@ -1,5 +1,7 @@
 //! This crate provides basic control for [`TMC2209`] stepper motor drivers using Rasberry Pi UART and GPIO interfaces.
 //!
+//! Note that this crate is still experimental and is not guaranteed to be stable or functional for all use cases.
+//!
 //! [`TMC2209`]: https://www.trinamic.com/products/integrated-circuits/details/tmc2209-la/
 
 #![allow(
