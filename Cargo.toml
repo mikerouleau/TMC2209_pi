@@ -7,4 +7,4 @@ authors = ["Mike Rouleau"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serialport = "4.2.0"
+rppal = "0.14.1"
