@@ -70,6 +70,8 @@ impl TMC2209 {
             self.direction = Direction::CCW;
         }
 
+        self.set_pdn_disable(true)?;
+
         //todo: test uart, gpio
         return Ok(());
     }
@@ -108,7 +110,7 @@ impl TMC2209 {
         }
     }
 
-    pub fn write_reg(&mut self, reg: u8, data: [u8; 4]) -> anyhow::Result<()> {
+    fn write_reg(&mut self, reg: u8, data: [u8; 4]) -> anyhow::Result<()> {
         let crc = crc8_atm(&[
             self.sync_byte,
             self.addr,
@@ -159,7 +161,7 @@ impl TMC2209 {
         return Ok(reg::GCONF::unpack_from_slice(&packed)?);
     }
 
-    pub fn set_shaft(&mut self, dir: bool) -> Result<(), anyhow::Error> {
+    fn set_shaft(&mut self, dir: bool) -> Result<(), anyhow::Error> {
         let mut packed = self.read_reg(reg::GCONF::ADDR)?;
         let mut unpacked = reg::GCONF::unpack_from_slice(&packed)?;
         unpacked.shaft = dir;
@@ -180,7 +182,7 @@ impl TMC2209 {
         }
     }
 
-    pub fn set_pdn_disable(&mut self, disable: bool) -> Result<(), anyhow::Error> {
+    fn set_pdn_disable(&mut self, disable: bool) -> Result<(), anyhow::Error> {
         let mut packed = self.read_reg(reg::GCONF::ADDR)?;
         let mut unpacked = reg::GCONF::unpack_from_slice(&packed)?;
         unpacked.pdn_disable = disable;
@@ -199,22 +201,27 @@ impl TMC2209 {
         }
     }
 
-    // pub fn set_vactual(&mut self, velocity: i32) -> Result<(), anyhow::Error> {
-    //     let mut packed = self.read_reg(reg::VACTUAL::ADDR)?;
-    //     let mut unpacked = reg::VACTUAL::unpack_from_slice(&packed)?;
-    //     unpacked.vactual = velocity.into();
-    //     packed = unpacked.pack()?;
-    //     let prior_cnt = reg::IFCNT::unpack_from_slice(&self.read_reg(reg::IFCNT::ADDR)?)?.cnt;
-    //     self.write_reg(reg::VACTUAL::ADDR + reg::WRITE_OFFSET, packed)?;
-    //     let after_cnt = reg::IFCNT::unpack_from_slice(&self.read_reg(reg::IFCNT::ADDR)?)?.cnt;
-    //     if prior_cnt < after_cnt {
-    //         println!("SUCCESS");
-    //         return Ok(());
-    //     } else {
-    //         println!("FAIL");
-    //         return Err(anyhow!(err::TMC2209Error::WriteFailed));
-    //     }
-    // }
+    fn set_vactual(&mut self, velocity: i32) -> Result<(), anyhow::Error> {
+        let mut packed = self.read_reg(reg::VACTUAL::ADDR)?;
+        let mut unpacked = reg::VACTUAL::unpack_from_slice(&packed)?;
+        unpacked.vactual = velocity.into();
+        packed = unpacked.pack()?;
+        let prior_cnt = reg::IFCNT::unpack_from_slice(&self.read_reg(reg::IFCNT::ADDR)?)?.cnt;
+        self.write_reg(reg::VACTUAL::ADDR + reg::WRITE_OFFSET, packed)?;
+        let after_cnt = reg::IFCNT::unpack_from_slice(&self.read_reg(reg::IFCNT::ADDR)?)?.cnt;
+        if prior_cnt < after_cnt {
+            println!("SUCCESS");
+            return Ok(());
+        } else {
+            println!("FAIL");
+            return Err(anyhow!(err::TMC2209Error::WriteFailed));
+        }
+    }
+
+    pub fn set_vel(&mut self, velocity: i32) -> Result<(), anyhow::Error> {
+        self.set_vactual(velocity)
+        //todo update position based on mscnt
+    }
 
     fn set_en(&mut self, level: bool) -> Result<(), anyhow::Error> {
         if level {
@@ -230,7 +237,7 @@ impl TMC2209 {
     }
 
     pub fn is_output_enabled(&mut self) -> bool {
-        true
+        self.en_pin.is_set_low()
     }
 
     pub fn set_dir(&mut self, level: bool) -> Result<(), anyhow::Error> {
@@ -262,7 +269,15 @@ impl TMC2209 {
         self.position = 0;
     }
 
+    //todo monitor stallguard for failure
     pub fn go_to_position(&mut self, position: i32) -> Result<(), anyhow::Error> {
+        let deactivate = if self.is_output_enabled() {
+            false
+        } else {
+            self.enable_output(true)?;
+            true
+        };
+
         if position - self.position > 0 {
             self.set_dir(false)?;
         } else {
@@ -272,7 +287,10 @@ impl TMC2209 {
         while self.position != position {
             self.step();
         }
-        //todo monitor stallguard for failure
+
+        if deactivate {
+            self.enable_output(false)?;
+        }
         Ok(())
     }
 }
