@@ -1,7 +1,9 @@
 use rppal::uart::{Parity, Uart};
+use std::convert::TryInto;
 use std::path::PathBuf;
 use std::time::Instant;
 
+mod err;
 mod reg;
 
 #[allow(dead_code)]
@@ -24,7 +26,7 @@ impl TMC2209 {
         }
     }
 
-    pub fn read_reg(&mut self, reg: u8) -> Option<[u8; 4]> {
+    pub fn read_reg(&mut self, reg: u8) -> Result<[u8; 4], err::TMC2209Error> {
         let crc = crc8_atm(&[self.sync_byte, self.addr, reg]);
         let frame = [self.sync_byte, self.addr, reg, crc];
 
@@ -45,18 +47,16 @@ impl TMC2209 {
                 let response: [u8; 8] = vec_to_array(received);
                 if is_valid_crc(&response) {
                     let data: [u8; 4] = response[3..7].try_into().unwrap();
-                    return Some(data);
+                    return Ok(data);
                 } else {
-                    println!("CRC Mismatch")
+                    return Err(err::TMC2209Error::CRCMismatch);
                 }
-                break;
+
                 //arbitrarily long timeout, seems plently long in testing
             } else if start.elapsed().as_millis() > 15 {
-                println!("Read Timeout!");
-                break;
+                return Err(err::TMC2209Error::TimedOut);
             }
         }
-        return None;
     }
 }
 
@@ -87,8 +87,6 @@ fn is_valid_crc(datagram: &[u8]) -> bool {
         return false;
     }
 }
-
-use std::convert::TryInto;
 
 fn vec_to_array<T, const N: usize>(v: Vec<T>) -> [T; N] {
     v.try_into()
