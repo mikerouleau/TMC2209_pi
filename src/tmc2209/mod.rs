@@ -28,6 +28,7 @@ pub struct TMC2209 {
     direction: Direction,
     uart: Uart,
     sync_byte: u8,
+    tstep: u64,
 }
 
 #[allow(dead_code)]
@@ -58,6 +59,7 @@ impl TMC2209 {
             direction: Direction::CCW,
             uart,
             sync_byte: 0x05,
+            tstep: 10,
         };
         tmc.init()?;
         Ok(tmc)
@@ -218,6 +220,7 @@ impl TMC2209 {
         Ok(())
     }
 
+    //todo rename start() and stop(), read from self.rpm
     pub fn set_vel(&mut self, velocity: i32) -> Result<(), anyhow::Error> {
         self.set_vactual(velocity)
         //todo update position based on mscnt
@@ -260,9 +263,9 @@ impl TMC2209 {
 
     pub fn step(&mut self) {
         self.step_pin.set_high();
-        thread::sleep(Duration::from_micros(700));
+        thread::sleep(Duration::from_micros(self.tstep));
         self.step_pin.set_low();
-        thread::sleep(Duration::from_micros(700));
+        thread::sleep(Duration::from_micros(self.tstep));
         if self.dir_pin.is_set_low() {
             self.position += 1;
         } else {
@@ -296,6 +299,21 @@ impl TMC2209 {
         if deactivate {
             self.enable_output(false)?;
         }
+        Ok(())
+    }
+
+    pub fn set_rpm(&mut self, rpm: u8) -> Result<(), anyhow::Error> {
+        let min_tstep = 500;
+        let nsteps_per_rev: u16 = 400;
+
+        let mut tstep = 1000000 / (nsteps_per_rev as u32) * 60 / (rpm as u32);
+
+        if tstep < min_tstep {
+            println!("max rpm exceeded, using tstep=500");
+            tstep = min_tstep;
+        };
+        println!("tstep:{}", tstep);
+        self.tstep = tstep.into();
         Ok(())
     }
 }
