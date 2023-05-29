@@ -8,6 +8,8 @@ license-file = "LICENSE"
 keywords = ["stepper", "motor", "driver", "rpi", "raspberry"]
 readme="README.md"
 categories=["hardware-support"]
+repository = "https://github.com/mikerouleau/TMC2209_pi"
+
 
 [dependencies]
 rppal = "0.14.1"
