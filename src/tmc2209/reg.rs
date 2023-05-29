@@ -258,3 +258,31 @@ pub struct MS_CUR_ACT {
 impl MS_CUR_ACT {
     pub const ADDR: u8 = 0x6B;
 }
+
+//limited implementation
+#[allow(non_camel_case_types)]
+#[derive(PackedStruct)]
+#[packed_struct(size_bytes = "4", bit_numbering = "lsb0", endian = "msb")]
+pub struct CHOPCONF {
+    #[packed_field(bits = "0..=3")]
+    pub toff: Integer<u8, packed_bits::Bits<4>>,
+    #[packed_field(bits = "4..=6")]
+    pub hstrt: Integer<u8, packed_bits::Bits<3>>,
+    #[packed_field(bits = "17")]
+    pub vsense: bool,
+    #[packed_field(bits = "24..=27")]
+    pub mres: Integer<u8, packed_bits::Bits<4>>,
+    #[packed_field(bits = "28")]
+    pub intpol: bool,
+    #[packed_field(bits = "29")]
+    pub dedge: bool,
+    #[packed_field(bits = "30")]
+    pub diss2g: bool,
+    #[packed_field(bits = "31")]
+    pub diss2vs: bool,
+}
+
+#[allow(dead_code)]
+impl CHOPCONF {
+    pub const ADDR: u8 = 0x6C;
+}

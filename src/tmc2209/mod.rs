@@ -43,6 +43,8 @@ impl TMC2209 {
     ) -> Result<Self, anyhow::Error> {
         let mut uart = Uart::with_path(path, baud_rate, Parity::None, 8, 1)?;
         uart.set_write_mode(true).expect("failed to set blocking");
+        uart.set_read_mode(8, Duration::from_millis(100))
+            .expect("failed to set blocking");
 
         let mut tmc = TMC2209 {
             path: path.into(),
@@ -70,9 +72,9 @@ impl TMC2209 {
             self.direction = Direction::CCW;
         }
 
-        self.set_pdn_disable(true)?;
-
-        //todo: test uart, gpio
+        self.test_uart()?;
+        self.set_mstep_reg_select(true)?;
+        //todo: test gpio
         return Ok(());
     }
 
@@ -132,9 +134,23 @@ impl TMC2209 {
         ];
 
         self.uart.flush(rppal::uart::Queue::Both)?;
+
+        let prior_cnt = reg::IFCNT::unpack_from_slice(&self.read_reg(reg::IFCNT::ADDR)?)?.cnt;
+
+        thread::sleep(Duration::from_micros(1)); // delay enhances reliability
+
         self.uart.write(&frame)?;
         self.uart.drain()?;
-        Ok(())
+
+        thread::sleep(Duration::from_micros(1));
+
+        let after_cnt = reg::IFCNT::unpack_from_slice(&self.read_reg(reg::IFCNT::ADDR)?)?.cnt;
+
+        if prior_cnt < after_cnt {
+            return Ok(());
+        } else {
+            return Err(anyhow!(err::TMC2209Error::WriteFailed));
+        }
     }
 
     pub fn test_uart(&mut self) -> Result<()> {
@@ -151,6 +167,7 @@ impl TMC2209 {
             self.set_pdn_disable(true)?;
         }
 
+        self.uart.drain()?;
         //todo read from DRV_STATUS here too
 
         return Ok(());
@@ -167,19 +184,8 @@ impl TMC2209 {
         unpacked.shaft = dir;
         packed = unpacked.pack()?;
 
-        let prior_cnt = reg::IFCNT::unpack_from_slice(&self.read_reg(reg::IFCNT::ADDR)?)?.cnt;
-
         self.write_reg(reg::GCONF::ADDR + reg::WRITE_OFFSET, packed)?;
-
-        let after_cnt = reg::IFCNT::unpack_from_slice(&self.read_reg(reg::IFCNT::ADDR)?)?.cnt;
-
-        if prior_cnt < after_cnt {
-            println!("SUCCESS");
-            return Ok(());
-        } else {
-            println!("FAIL");
-            return Err(anyhow!(err::TMC2209Error::WriteFailed));
-        }
+        Ok(())
     }
 
     fn set_pdn_disable(&mut self, disable: bool) -> Result<(), anyhow::Error> {
@@ -188,17 +194,19 @@ impl TMC2209 {
         unpacked.pdn_disable = disable;
         packed = unpacked.pack()?;
 
-        let prior_cnt = reg::IFCNT::unpack_from_slice(&self.read_reg(reg::IFCNT::ADDR)?)?.cnt;
+        self.write_reg(reg::GCONF::ADDR + reg::WRITE_OFFSET, packed)?;
+        Ok(())
+    }
+
+    fn set_mstep_reg_select(&mut self, disable_pins: bool) -> Result<(), anyhow::Error> {
+        let mut packed = self.read_reg(reg::GCONF::ADDR)?;
+        let mut unpacked = reg::GCONF::unpack_from_slice(&packed)?;
+        unpacked.mstep_reg_select = disable_pins;
+        packed = unpacked.pack()?;
 
         self.write_reg(reg::GCONF::ADDR + reg::WRITE_OFFSET, packed)?;
 
-        let after_cnt = reg::IFCNT::unpack_from_slice(&self.read_reg(reg::IFCNT::ADDR)?)?.cnt;
-
-        if prior_cnt < after_cnt {
-            return Ok(());
-        } else {
-            return Err(anyhow!(err::TMC2209Error::WriteFailed));
-        }
+        Ok(())
     }
 
     fn set_vactual(&mut self, velocity: i32) -> Result<(), anyhow::Error> {
@@ -206,16 +214,8 @@ impl TMC2209 {
         let mut unpacked = reg::VACTUAL::unpack_from_slice(&packed)?;
         unpacked.vactual = velocity.into();
         packed = unpacked.pack()?;
-        let prior_cnt = reg::IFCNT::unpack_from_slice(&self.read_reg(reg::IFCNT::ADDR)?)?.cnt;
         self.write_reg(reg::VACTUAL::ADDR + reg::WRITE_OFFSET, packed)?;
-        let after_cnt = reg::IFCNT::unpack_from_slice(&self.read_reg(reg::IFCNT::ADDR)?)?.cnt;
-        if prior_cnt < after_cnt {
-            println!("SUCCESS");
-            return Ok(());
-        } else {
-            println!("FAIL");
-            return Err(anyhow!(err::TMC2209Error::WriteFailed));
-        }
+        Ok(())
     }
 
     pub fn set_vel(&mut self, velocity: i32) -> Result<(), anyhow::Error> {
@@ -251,6 +251,11 @@ impl TMC2209 {
 
     pub fn get_dir(&mut self) -> bool {
         return self.dir_pin.is_set_high();
+    }
+
+    pub fn get_chopconf(&mut self) -> Result<reg::CHOPCONF, anyhow::Error> {
+        let packed = self.read_reg(reg::CHOPCONF::ADDR)?;
+        return Ok(reg::CHOPCONF::unpack_from_slice(&packed)?);
     }
 
     pub fn step(&mut self) {
