@@ -15,4 +15,5 @@
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
 
+/// interface for control of TMC2209 stepper motor driver on Rasberry Pi.
 pub mod tmc2209;

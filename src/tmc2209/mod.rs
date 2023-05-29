@@ -10,28 +10,70 @@ mod err;
 mod reg;
 use crate::tmc2209::err::TMC2209Error;
 
+/// Motor rotation directions
+#[derive(PartialEq, Copy, Clone)]
 pub enum Direction {
+    ///Clockwise
     CW,
+    ///Counterclockwise
     CCW,
 }
-//Pins are BCM number!
+
+/// An instance of a TMC2209 driver to control
+///
+/// For complete control, UART and GPIO connections are required. Each driver may have different pins/addresses
+///  Pin numbers are BCM numbers, which does often not correspond to physical pin numbers!
 pub struct TMC2209 {
+    /// PathBuf to the UART interface (e.g. at "/dev/serial0").
     pub path: PathBuf,
+    /// UART address of the TMC2209 driver (typically 0x0 by default).
     pub addr: u8,
+    /// UART baud rate. This value must be between 9600 and 500k (up to 5M with external clock). 115200 Baud is recommended as a default.
     pub baud_rate: u32,
+    /// BCM GPIO pin controlling the step interface.
     pub step_pin: OutputPin,
-    pub dir_pin: OutputPin, //remove me?
+    /// BCM GPIO pin controlling the dir interface.
+    pub dir_pin: OutputPin,
+    /// BCM GPIO pin controlling the en interface.
     pub en_pin: OutputPin,
+    /// BCM GPIO pin reading the diag interface.
     pub diag_pin: InputPin,
+    /// A counter to determine position of a stepper motor.
     pub position: i32,
+    /// Motor direction of rotation.
     direction: Direction,
+    /// UART instance commmunicating with the TMC2209.
     uart: Uart,
+    /// A (near) arbitrary sync byte to start UART communication with the TMC2209.
     sync_byte: u8,
-    tstep: u64,
+    /// Time in milliseconds between steps when using the step/dir interface.
+    step_time: u64,
 }
 
 #[allow(dead_code)]
 impl TMC2209 {
+    /// Constructs a new TMC2209
+    ///
+    /// Use notes: Specify BCM pin numbers for GPIO connections `step_pin`,`dir_pin`, `en_pin`, and `diag_pin`. This interface should be allowed to mutate.
+    ///
+    /// Construction will test UART communication and tweak a couple registers to allow for more complete UART control.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the UART interface (e.g. "/dev/serial0").
+    /// * `addr` - The TMC2209's UART address (typically 0x0 by default).
+    /// * `baud_rate` - UART baud rate. 115200 is recommended as default.
+    /// * `step_pin` - BCM number of the GPIO pin controlling the step interface.
+    /// * `dir_pin` - BCM number of the GPIO pin controlling the dir interface.
+    /// * `en_pin` - BCM number of the GPIO pin controlling the en interface.
+    /// * `diag_pin` - BCM number of the  GPIO pin reading the diag interface.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tmc2209_pi::TMC2209
+    /// let mut tmc = TMC2209::new("/dev/serial0", 0x0, 115_200, 16, 20, 21, 26)
+    /// ```
     pub fn new(
         path: &str,
         addr: u8,
@@ -58,7 +100,7 @@ impl TMC2209 {
             direction: Direction::CCW,
             uart,
             sync_byte: 0x05,
-            tstep: 10,
+            step_time: 5000, // todo make me actual step time, not step time/2
         };
         tmc.init()?;
         Ok(tmc)
@@ -79,7 +121,7 @@ impl TMC2209 {
         return Ok(());
     }
 
-    pub fn read_reg(&mut self, reg: u8) -> Result<[u8; 4]> {
+    fn read_reg(&mut self, reg: u8) -> Result<[u8; 4]> {
         let crc = crc8_atm(&[self.sync_byte, self.addr, reg]);
         let frame = [self.sync_byte, self.addr, reg, crc];
 
@@ -154,6 +196,17 @@ impl TMC2209 {
         }
     }
 
+    /// Test the UART interface by attempting to read some expected values from the TMC2209 register. If pdn_disable is false, it is set to true.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// if tmc.test_uart().is_ok(){
+    ///     println!("UART is ok!")
+    /// } else {
+    ///     println!("Something went wrong!")
+    /// }
+    /// ```
     pub fn test_uart(&mut self) -> Result<()> {
         let response = self.read_reg(reg::IOIN::ADDR)?;
         let unpacked = reg::IOIN::unpack_from_slice(&response)?;
@@ -220,6 +273,9 @@ impl TMC2209 {
     }
 
     //todo rename start() and stop(), read from self.rpm
+    /// allows moving the motor by UART control.
+    /// `velocity` range is given in +-(2^23)-1 [µsteps / t]
+    /// This function does NOT increment the positon counter and should only be used for low-precision applications. The motor direction is also determined by the sign of `velocity`, not the value of self.direction.
     pub fn set_vel(&mut self, velocity: i32) -> Result<(), anyhow::Error> {
         self.set_vactual(velocity)
         //todo update position based on mscnt
@@ -234,37 +290,45 @@ impl TMC2209 {
         Ok(())
     }
 
+    /// enables TMC2209 output by pulling the `en` GPIO pin high when `tf` is true. When  `tf` is false, en is lowered and output is disabled.
     pub fn enable_output(&mut self, tf: bool) -> Result<(), anyhow::Error> {
         return self.set_en(!tf);
     }
 
+    /// Returns true if output is enabled. More specifically, it returns the state of the en GPIO pin, which enables TMC2209 output.
     pub fn is_output_enabled(&mut self) -> bool {
         self.en_pin.is_set_low()
     }
 
-    pub fn set_dir(&mut self, level: bool) -> Result<(), anyhow::Error> {
-        if level {
-            self.dir_pin.set_high();
+    /// Controls motor direction by changing the state of the dir GPIO pin.
+    pub fn set_dir(&mut self, direction: Direction) -> Result<(), anyhow::Error> {
+        if self.direction == direction {
         } else {
-            self.dir_pin.set_low();
+            if self.dir_pin.is_set_high() {
+                self.dir_pin.set_low();
+            } else {
+                self.dir_pin.set_high();
+            }
+            self.direction = direction;
         }
         Ok(())
     }
 
-    pub fn get_dir(&mut self) -> bool {
-        return self.dir_pin.is_set_high();
+    /// Returns the Direction of the motor shaft.
+    pub fn get_dir(&mut self) -> Direction {
+        return self.direction;
     }
 
-    pub fn get_chopconf(&mut self) -> Result<reg::CHOPCONF, anyhow::Error> {
+    fn get_chopconf(&mut self) -> Result<reg::CHOPCONF, anyhow::Error> {
         let packed = self.read_reg(reg::CHOPCONF::ADDR)?;
         return Ok(reg::CHOPCONF::unpack_from_slice(&packed)?);
     }
 
-    pub fn step(&mut self) {
+    fn step(&mut self) {
         self.step_pin.set_high();
-        thread::sleep(Duration::from_micros(self.tstep));
+        thread::sleep(Duration::from_micros(self.step_time));
         self.step_pin.set_low();
-        thread::sleep(Duration::from_micros(self.tstep));
+        thread::sleep(Duration::from_micros(self.step_time));
         if self.dir_pin.is_set_low() {
             self.position += 1;
         } else {
@@ -272,11 +336,13 @@ impl TMC2209 {
         }
     }
 
+    /// Resets the position counter to 0.
     pub fn reset_position(&mut self) {
         self.position = 0;
     }
 
     //todo monitor stallguard for failure
+    /// Moves the motor to step `position`. Where exactly this is depends on microstep settings, stepper motor model, etc.
     pub fn go_to_position(&mut self, position: i32) -> Result<(), anyhow::Error> {
         let deactivate = if self.is_output_enabled() {
             false
@@ -286,9 +352,9 @@ impl TMC2209 {
         };
 
         if position - self.position > 0 {
-            self.set_dir(false)?;
+            self.set_dir(Direction::CW)?;
         } else {
-            self.set_dir(true)?;
+            self.set_dir(Direction::CCW)?;
         }
 
         while self.position != position {
@@ -301,18 +367,24 @@ impl TMC2209 {
         Ok(())
     }
 
+    /// Directly set the time between steps (`step_time`) in milliseconds.
+    pub fn set_step_time(&mut self, step_time: u32) -> Result<(), anyhow::Error> {
+        let min_step_time = 500;
+        if step_time < min_step_time {
+            println!("max speed exceeded, using step_time = 1000");
+            self.step_time = min_step_time.into();
+        } else {
+            self.step_time = (step_time / 2).into();
+        }
+        Ok(())
+    }
+
+    /// Sets the speed of the motor in terms of rev/m (`rpm`). This assumes 400 steps/rev, which may not be true for you. If you prefer, set the time between steps directly using `set_step_time(t)`.
     pub fn set_rpm(&mut self, rpm: u8) -> Result<(), anyhow::Error> {
-        let min_tstep = 500;
         let nsteps_per_rev: u16 = 400;
 
-        let mut tstep = 1000000 / (nsteps_per_rev as u32) * 60 / (rpm as u32);
-
-        if tstep < min_tstep {
-            println!("max rpm exceeded, using tstep=500");
-            tstep = min_tstep;
-        };
-        println!("tstep:{}", tstep);
-        self.tstep = tstep.into();
+        let step_time = 1000000 / (nsteps_per_rev as u32) * 60 / 2 / (rpm as u32);
+        self.set_step_time(step_time)?;
         Ok(())
     }
 }
