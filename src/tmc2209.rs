@@ -24,7 +24,7 @@ impl TMC2209 {
         }
     }
 
-    pub fn read_reg(&mut self, reg: u8) -> Vec<u8> {
+    pub fn read_reg(&mut self, reg: u8) -> Option<[u8; 4]> {
         let crc = crc8_atm(&[self.sync_byte, self.addr, reg]);
         let frame = [self.sync_byte, self.addr, reg, crc];
 
@@ -42,23 +42,21 @@ impl TMC2209 {
 
             if received.len() == 12 {
                 received.drain(0..4);
-                if valid_crc_8byte(&received) {
-                    received.drain(0..3);
-                    received.pop();
+                let response: [u8; 8] = vec_to_array(received);
+                if is_valid_crc(&response) {
+                    let data: [u8; 4] = response[3..7].try_into().unwrap();
+                    return Some(data);
                 } else {
-                    received = vec![];
                     println!("CRC Mismatch")
                 }
                 break;
                 //arbitrarily long timeout, seems plently long in testing
             } else if start.elapsed().as_millis() > 15 {
-                received = vec![];
                 println!("Read Timeout!");
                 break;
             }
         }
-
-        return received;
+        return None;
     }
 }
 
@@ -80,11 +78,10 @@ fn crc8_atm(datagram: &[u8]) -> u8 {
 }
 
 // This is messy, but works. Needs optimization.
-fn valid_crc_8byte(datagram: &Vec<u8>) -> bool {
-    let mut local_dg = datagram.clone();
-    let expected_crc = local_dg.pop();
-    let dg: [u8; 7] = vec_to_array(local_dg);
-    if expected_crc == Some(crc8_atm(&dg)) {
+fn is_valid_crc(datagram: &[u8]) -> bool {
+    let n = datagram.len();
+    let expected_crc = datagram[n - 1];
+    if expected_crc == crc8_atm(&datagram[0..n - 1]) {
         return true;
     } else {
         return false;
@@ -92,7 +89,6 @@ fn valid_crc_8byte(datagram: &Vec<u8>) -> bool {
 }
 
 use std::convert::TryInto;
-use std::vec;
 
 fn vec_to_array<T, const N: usize>(v: Vec<T>) -> [T; N] {
     v.try_into()
