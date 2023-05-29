@@ -22,26 +22,29 @@ impl TMC2209 {
         }
     }
 
-    pub fn read(&mut self, reg: u8) -> Vec<u8> {
+    pub fn read_reg(&mut self, reg: u8) -> Vec<u8> {
         let crc = crc8_atm(&[self.sync_byte, self.addr, reg], 0);
         let frame = [self.sync_byte, self.addr, reg, crc];
+
+        self.uart.write(&frame).expect("Frame not written.");
 
         let mut buffer = [0u8; 1];
         let mut received = Vec::new();
 
-        println!("send");
-        self.uart.write(&frame).expect("not written");
-
-        println!("recieve");
         let start = Instant::now();
         loop {
             // Fill the buffer variable with any incoming data.
             if self.uart.read(&mut buffer).unwrap() > 0 {
                 received.push(buffer[0]);
-                println!("Buffer byte: {}", buffer[0]);
             }
 
-            if (received.len() == 12) || (start.elapsed().as_micros() > 8 * 20000) {
+            if received.len() == 12 {
+                received.drain(0..4);
+                break;
+                //arbitrarily long timeout, seems plently long in testing
+            } else if start.elapsed().as_millis() > 15 {
+                received = vec![];
+                print!("Read Timeout!");
                 break;
             }
         }
