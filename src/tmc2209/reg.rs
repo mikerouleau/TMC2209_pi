@@ -171,7 +171,7 @@ impl TPWM_THRS {
 #[packed_struct(size_bytes = "4", bit_numbering = "lsb0", endian = "msb")]
 pub struct VACTUAL {
     #[packed_field(bits = "0..=23")]
-    pub tpwm_thrs: Integer<i32, packed_bits::Bits<24>>,
+    pub vactual: Integer<i32, packed_bits::Bits<24>>,
 }
 
 #[allow(dead_code)]
