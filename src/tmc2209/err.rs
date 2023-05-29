@@ -11,4 +11,6 @@ pub enum TMC2209Error {
     Unknown,
     #[error("unexpected response")]
     UnexpectedResponse,
+    #[error("uart write failed")]
+    WriteFailed,
 }
